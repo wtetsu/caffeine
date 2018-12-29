@@ -23,29 +23,24 @@ import static com.google.common.base.Preconditions.checkNotNull;
  *
  * @author ben.manes@gmail.com (Ben Manes)
  */
-interface HillClimber {
+public interface HillClimber {
 
   /**
-   * Records that an access occurred.
-   *
-   * @param key   the key accessed
-   */
-  default void doAlways(long key) {};
-
-  /**
-   * Records that a hit occurred.
-   *
-   * @param key   the key accessed
-   * @param queue the queue the entry was found in
-   */
-  void onHit(long key, QueueType queue);
-
-  /**
-   * Records that a miss occurred.
+   * Records that a hit occurred with a full cache.
    *
    * @param key the key accessed
+   * @param queue the queue the entry was found in
+   * @param isFull if the cache is fully populated
    */
-  void onMiss(long key);
+  void onHit(long key, QueueType queue, boolean isFull);
+
+  /**
+   * Records that a miss occurred with a full cache.
+   *
+   * @param key the key accessed
+   * @param isFull if the cache is fully populated and had to evict
+   */
+  void onMiss(long key, boolean isFull);
 
   /**
    * Determines how to adapt the segment sizes.
@@ -62,19 +57,40 @@ interface HillClimber {
 
   /** The adaptation type and its magnitude. */
   final class Adaptation {
-    enum Type {
+    public enum Type {
       HOLD, INCREASE_WINDOW, DECREASE_WINDOW
     }
 
-    static final Adaptation HOLD = new Adaptation(Type.HOLD, 0);
+    private static final Adaptation HOLD = new Adaptation(Type.HOLD, 0);
 
     final int amount;
     final Type type;
 
-    Adaptation(Type type, int amount) {
+    private Adaptation(Type type, int amount) {
+      checkArgument(amount >= 0, "Step size %s must be positive", amount);
       this.type = checkNotNull(type);
-      checkArgument(amount >= 0);
       this.amount = amount;
+    }
+
+    /** Returns the adaption based on the amount, where a negative value decreases the window. */
+    public static Adaptation adaptBy(double amount) {
+      if (amount == 0) {
+        return hold();
+      } else if (amount < 0) {
+        return decreaseWindow(Math.abs((int) Math.floor(amount)));
+      } else {
+        return increaseWindow((int) Math.ceil(amount));
+      }
+    }
+
+    public static Adaptation hold() {
+      return HOLD;
+    }
+    public static Adaptation increaseWindow(int amount) {
+      return new Adaptation(Type.INCREASE_WINDOW, amount);
+    }
+    public static Adaptation decreaseWindow(int amount) {
+      return new Adaptation(Type.DECREASE_WINDOW, amount);
     }
   }
 }
